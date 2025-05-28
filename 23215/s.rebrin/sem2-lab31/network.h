@@ -35,6 +35,7 @@ typedef struct client {
     char buffer[4096];       /* Buffer to store data read from the target server or client */
     int writing;             /* Flag indicating whether the client is currently processing a request (1 - active, 0 - finished) */
     int writing_to_client_total; /* Total number of bytes to be written to the client socket in the current operation */
+    int client_disc;         /* Flag indicating that the client has disconnected, but data is still being written to cache */
     cache* cur_cache;        /* Pointer to the current cache entry associated with the client's request */
     data* cur_data;          /* Pointer to the current data block from the cache (used when reading from cache) */
     time_t last_activity;    /* Timestamp of the last activity from the client (for timeout checking) */

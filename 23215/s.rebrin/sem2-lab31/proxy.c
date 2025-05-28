@@ -63,6 +63,8 @@ void logs() {
 	printf("\n");
 }
 
+
+
 void signal_handler(int sig) {
 	close(server_socket);
 	client* cur = client_head;

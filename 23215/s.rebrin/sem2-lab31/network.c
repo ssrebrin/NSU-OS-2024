@@ -10,7 +10,28 @@
 
 void error(const char* msg);
 
-void con_to_host(int* sockfd, char* host) {
+void con_to_host(int* sockfd, char* full_host) {
+    char host[256];
+    int port = 80; 
+
+    const char* colon = strchr(full_host, ':');
+    if (colon) {
+        size_t host_len = colon - full_host;
+        if (host_len >= sizeof(host)) {
+            error("Hostname too long");
+        }
+        strncpy(host, full_host, host_len);
+        host[host_len] = '\0';
+        port = atoi(colon + 1);
+        if (port <= 0 || port > 65535) {
+            error("Invalid port");
+        }
+    }
+    else {
+        strncpy(host, full_host, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+    }
+
     struct hostent* server;
     struct sockaddr_in serv_addr;
 
@@ -25,7 +46,7 @@ void con_to_host(int* sockfd, char* host) {
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(80);
+    serv_addr.sin_port = htons(port);
 
     if (connect(*sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0)
         error("Connection error");
