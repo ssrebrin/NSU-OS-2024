@@ -25,6 +25,7 @@ typedef struct cache {
 } cache;
 
 typedef struct client {
+    pthread_t thr;
     int cli_fd;              /* File descriptor for the client socket */
     int inet_fd;             /* File descriptor for the socket connected to the target host/server */
     char* host;              /* Pointer to a string containing the hostname of the target server */
