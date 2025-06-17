@@ -13,12 +13,13 @@
 #include "cache.h"
 
 #define BUFFER_SIZE 4096
-#define HOST "127.0.0.1:6000"
 #define STAY_CONNECTION_IN_WRITING_FROM_BUFFER 1
 #define CLIENT_TIMEOUT 10
 
 int sockfd;
 int server_socket;
+int finish = 0;
+int flag = 0;
 
 client* client_head = NULL;
 
@@ -27,12 +28,8 @@ time_t last_log;
 int lg = 1;
 
 void logs() {
-	time_t lst = time(NULL);
-	if (lst - last_log < 10) {
-		return;
-	}
-	last_log = lst;
 	client* cur = client_head;
+	check_live_time_cache();
 	//if (!cur && !lg) return;
 	printf("\nClients log:\n");
 	if (!cur) {
@@ -64,8 +61,7 @@ void logs() {
 }
 
 
-
-void signal_handler(int sig) {
+void signal_handler_hard(int sig) {
 	close(server_socket);
 	client* cur = client_head;
 	while (cur) {
@@ -79,6 +75,7 @@ void signal_handler(int sig) {
 	}
 	cache* cache_cur = cache_head;
 	while (cache_cur) {
+		printf("h2\n");
 		cache* next = cache_cur->next;
 		remove_from_cache(cache_cur);
 		cache_cur = next;
@@ -86,7 +83,22 @@ void signal_handler(int sig) {
 	exit(0);
 }
 
+void signal_handler(int sig) {
+	finish = 1;
+	close(server_socket);
+	server_socket = 0;
+	flag = 1;
+	signal(SIGINT, signal_handler_hard);
+}
+
+void signal_log(int sig) {
+	flag = 1;
+	logs();
+	signal(SIGQUIT, signal_log);
+}
+
 void error(const char* msg) {
+	printf("h1\n");
 	perror(msg);
 	close(server_socket);
 	client* cur = client_head;
@@ -127,6 +139,8 @@ int add(int cl_fd) {
 	a->headers_collectors = (char*)malloc(4096);
 	a->host = (char*)malloc(BUFFER_SIZE);
 	if (!a->host) {
+
+		printf("here12\n");
 		free(a);
 		return -1;
 	}
@@ -161,7 +175,7 @@ client* clear_connection(client* cur) {
 	while (*p && *p != cur) p = &(*p)->next;
 	if (*p) *p = next;
 	free(cur->host);
-	free(cur->headers_collectors);
+	if (cur->headers_collectors) free(cur->headers_collectors);
 	free(cur);
 	return next;
 }
@@ -178,6 +192,7 @@ int main() {
 	}
 
 	signal(SIGINT, signal_handler);
+	signal(SIGQUIT, signal_log);
 
 	client_socket = accept(server_socket, NULL, NULL);
 	//printf("hello\n");
@@ -187,6 +202,7 @@ int main() {
 	printf("\nStarting server\n");
 
 	while (1) {
+		if (!client_head && finish) break;
 		struct timeval tv;
 		tv.tv_sec = 5;
 		tv.tv_usec = 0;
@@ -195,6 +211,7 @@ int main() {
 		fd_set write_fds;
 		FD_ZERO(&read_fds);
 		FD_ZERO(&write_fds);
+		if(!finish)
 		FD_SET(server_socket, &read_fds);
 
 		time_t now = time(NULL);
@@ -221,8 +238,11 @@ int main() {
 		}
 
 		int activity = select(max_fd + 1, &read_fds, &write_fds, NULL, &tv);
-		logs();
 		if (activity < 0) {
+			if (flag) {
+				flag = 0;
+				continue;
+			}
 			perror("select");
 			exit(1);
 		}
@@ -278,7 +298,12 @@ int main() {
 					}
 					else {
 						cur->using_cache = 0;
-						parse_http_request(buffer, hst);
+						char method[16];
+						parse_http_request(buffer, hst, method);
+						if (strcmp(method, "GET") && strcmp(method, "POST")) {
+							cur = clear_connection(cur);
+							continue;
+						}
 						cur->cur_cache = add_to_cache(buffer);
 						cur->cur_cache->working = 1;
 						if (hst[0] != '\0' && (cur->host[0] == '\0' || strcmp(hst, cur->host))) {
@@ -327,7 +352,7 @@ int main() {
 				}
 			}
 			else {
-				if (cur->inet_fd && FD_ISSET(cur->cli_fd, &write_fds) && FD_ISSET(cur->inet_fd, &read_fds) && !cur->writing_to_client && (cur->tot <= cur->len + cur->headers_len || cur->len == -1) &&
+				if (cur->inet_fd && FD_ISSET(cur->cli_fd, &write_fds) && FD_ISSET(cur->inet_fd, &read_fds) && !cur->writing_to_client && (cur->tot <= cur->len + cur->headers_len || cur->len == 0) &&
 					(bytes_read = read(cur->inet_fd, cur->buffer, BUFFER_SIZE - 1)) >= 0) {
 					if (!bytes_read) {
 
@@ -343,13 +368,14 @@ int main() {
 					//Headers paring
 					if (cur->collect_headers != -1) {
 						strncpy(cur->headers_collectors + cur->collect_headers, cur->buffer, minn(4096, cur->collect_headers + bytes_read));
+						cur->collect_headers += bytes_read;
 						if (strstr(cur->headers_collectors, "\r\n\r\n")) {
 
 							if (!cur->len || cur->cur_cache->live_time == -1 || cur->cur_cache->status_code == -1) {
 								int len, live, status;
 								parse_headers(cur->buffer, &len, &live, &status);
 								if (!cur->len) cur->len = len == -1 ? cur->len : len;
-								if (cur->cur_cache->live_time == -1) cur->cur_cache->live_time = live == -1 ? cur->cur_cache->live_time : 60;
+								if (cur->cur_cache->live_time == -1) cur->cur_cache->live_time = live == -1 ? cur->cur_cache->live_time : 30;
 								if (cur->cur_cache->status_code == -1) cur->cur_cache->status_code = status == -1 ? cur->cur_cache->status_code : status;
 								if ((status != -1 && status / 100 != 2) || len == -1) {
 									remove_from_cache(cur->cur_cache);
@@ -369,6 +395,7 @@ int main() {
 								}
 							}
 							free(cur->headers_collectors);
+							cur->headers_collectors = NULL;
 							cur->collect_headers = -1;
 						}
 					}
@@ -383,7 +410,7 @@ int main() {
 					if (cur->cur_cache && cur->cur_cache->working) {
 						add_to_data(cur->cur_cache, cur->buffer, bytes_read);
 					}
-					if (cur->len != -1 && cur->tot >= cur->len + cur->headers_len) {
+					if (cur->len != 0 && cur->tot >= cur->len + cur->headers_len) {
 						if (cur->cur_cache) cur->cur_cache->working = 0;
 						close(cur->inet_fd);
 						cur->inet_fd = 0;

@@ -50,7 +50,7 @@ typedef struct client {
 void con_to_host(int* sockfd, char* host);
 void con_to_cli(int* sockfd);
 void set_nonblocking(int cl_fd);
-void parse_http_request(const char* request, char* host);
+void parse_http_request(const char* request, char* host, char* method);
 int get_content_length_from_headers(const char* headers);
 void parse_headers(const char* headers, int* content_length, int* cache_live, int* status);
 

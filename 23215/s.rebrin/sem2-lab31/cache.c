@@ -63,7 +63,8 @@ cache* add_to_cache(char* req) {
 void fr_data(data* d) {
     while (d) {
         data* next = d->next;
-        free(d->data);
+        if (d->data) free(d->data);
+        d->data = NULL;
         free(d);
         d = next;
     }

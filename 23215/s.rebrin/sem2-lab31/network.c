@@ -86,8 +86,8 @@ void set_nonblocking(int cl_fd) {
     }
 }
 
-void parse_http_request(const char* request, char* host) {
-    char method[16], path[256], version[16];
+void parse_http_request(const char* request, char* host, char* method) {
+    char path[256], version[16];
 
     sscanf(request, "%15s %255s %15s", method, path, version);
 
