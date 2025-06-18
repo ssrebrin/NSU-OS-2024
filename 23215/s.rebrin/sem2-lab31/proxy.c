@@ -201,7 +201,7 @@ int main() {
 
 	add(client_socket);
 
-	signal(SIGINT, signal_handler_hard);
+	//signal(SIGINT, signal_handler_hard);
 	printf("\nStarting server\n");
 	signal(SIGINT, signal_handler);
 
