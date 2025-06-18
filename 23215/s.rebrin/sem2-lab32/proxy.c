@@ -20,11 +20,13 @@
 
 int sockfd;
 int server_socket;
-volatile client* client_head = NULL;
+client* client_head = NULL;
 time_t last_log;
 int lg = 1;
 pthread_mutex_t mut;
 pthread_mutexattr_t attr;
+pthread_mutex_t mut_cache;
+pthread_mutexattr_t attr_cache;
 
 void logs() {
     if (LOG) {
@@ -51,7 +53,10 @@ void logs() {
         }
         else {
             while (cc) {
-                printf("==============================================\n%s==============================================\n", cc->request);
+                if (cc->working)
+                printf("====================Caching===================\n%s==============================================\n", cc->request);
+                else
+                printf("====================Caching===================\n%s==============================================\n", cc->request);
                 cc = cc->next;
             }
         }
@@ -144,6 +149,9 @@ int main() {
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
     pthread_mutex_init(&mut, &attr);
+    pthread_mutexattr_init(&attr_cache);
+    pthread_mutexattr_settype(&attr_cache, PTHREAD_MUTEX_ERRORCHECK);
+    pthread_mutex_init(&mut_cache, &attr_cache);
     last_log = time(NULL);
     signal(SIGQUIT, signal_log);
 
@@ -163,13 +171,14 @@ int main() {
             perror("accept");
             continue;
         }
-        printf("\tNew client %d\n", client_socket);
+        printf(">New client %d\n", client_socket);
         
 
         thread_data* dat = (thread_data*)malloc(sizeof(thread_data));
         dat->cl = add(client_socket);
         dat->cl_h = &client_head;
         dat->mut = &mut;
+        dat->mut_cac = &mut_cache;
 
         int code = pthread_create(&dat->cl->thr, NULL, cli_thread, dat);
         if (code != 0) {

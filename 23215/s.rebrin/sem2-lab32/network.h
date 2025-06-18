@@ -16,6 +16,7 @@ typedef struct data {
 
 typedef struct cache {
     char* request;
+    char* host;
     int live_time;
     time_t birth_time;
     int status_code;

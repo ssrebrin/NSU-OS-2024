@@ -19,6 +19,7 @@ typedef struct thread_data {
     client* cl;
     client** cl_h;
     pthread_mutex_t* mut;
+    pthread_mutex_t* mut_cac;
 } thread_data;
 
 void* cli_thread(void* cl);
