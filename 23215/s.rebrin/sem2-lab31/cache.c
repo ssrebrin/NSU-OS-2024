@@ -34,12 +34,13 @@ void add_to_data(cache* cac, char* buff, int len) {
     }
 }
 
-cache* add_to_cache(char* req) {
+cache* add_to_cache(char* req, char* host) {
 
     cache* new_cache = (cache*)malloc(sizeof(cache));
     if (!new_cache) return NULL;
 
     new_cache->request = strdup(req);
+    new_cache->host = strdup(host);
     new_cache->live_time = -1;
     new_cache->birth_time = time(NULL);
     new_cache->working = 0;
@@ -49,7 +50,7 @@ cache* add_to_cache(char* req) {
     cache* t;
     if (!cache_head) {
         cache_head = new_cache;
-        printf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAaa\n");
+        //printf("AAAAAAAAAAAAAAAAAAAAAAAAAAAAaa\n");
     }
     else {
         t = cache_head;
@@ -58,6 +59,77 @@ cache* add_to_cache(char* req) {
     }
 
     return new_cache;
+}
+
+void get_header_value(const char* headers, const char* name, char* value) {
+    size_t name_len = strlen(name);
+
+    const char* p = headers;
+    while (*p) {
+        const char* line_start = p;
+        const char* colon = strchr(line_start, ':');
+        if (!colon) break;
+
+        size_t key_len = colon - line_start;
+
+        if (strncasecmp(line_start, name, name_len) == 0 && line_start[name_len] == ':') {
+            const char* val_start = colon + 1;
+            while (*val_start == ' ' || *val_start == '\t') val_start++;
+
+            size_t i = 0;
+            while (*val_start && *val_start != '\r' && *val_start != '\n' && i < 1024 - 1) {
+                value[i++] = *val_start++;
+            }
+            value[i] = '\0';
+            return;
+        }
+
+        p = strstr(p, "\n");
+        if (!p) break;
+        p++;
+    }
+
+    return;
+}
+
+
+int vary_headers_match(const char* req1, const char* req2) {
+    char* vary_value = (char*)malloc(1024);
+    get_header_value(req1, "Vary", vary_value);
+    if (!vary_value) return 1;
+
+        char* v1 = (char*)malloc(1024);
+        char* v2 = (char*)malloc(1024);
+
+    if (strchr(vary_value, '*')) { 
+        free(vary_value);
+        return 1; }
+
+    char header[128];
+    const char* p = vary_value;
+    while (*p) {
+        while (*p == ' ' || *p == ',') p++;
+        if (!*p) break;
+
+        int i = 0;
+        while (*p && *p != ',' && *p != '\r' && *p != '\n' && i < sizeof(header) - 1) {
+            header[i++] = *p++;
+        }
+        header[i] = '\0';
+
+        get_header_value(req1, header, v1);
+        get_header_value(req2, header, v2);
+        if (!v1 || !v2 || strcmp(v1, v2) != 0) {
+            free(v1);
+            free(v2);
+            free(vary_value);
+            return 0;
+        }
+    }
+            free(v1);
+            free(v2);
+    free(vary_value);
+    return 1;
 }
 
 void fr_data(data* d) {
@@ -70,10 +142,11 @@ void fr_data(data* d) {
     }
 }
 
-cache* find_cache(char* buf) {
+cache* find_cache(char* buf, char* host) {
     cache* cur = cache_head;
     while (cur) {
-        if (!cur->working && !strcmp(buf, cur->request)) return cur;
+        //printf(">%d", vary_headers_match(buf, cur->request));
+        if (!cur->working && !strcmp(host, cur->host) && vary_headers_match(buf, cur->request)) return cur;
         cur = cur->next;
     }
     return NULL;

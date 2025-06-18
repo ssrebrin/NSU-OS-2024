@@ -48,7 +48,10 @@ void logs() {
 		printf("==============================================\nNo cache\n==============================================\n");
 	}
 	else while (cc) {
-		printf("==============================================\n%s==============================================\n", cc->request);
+		if (cc->working)
+			printf("====================Caching===================\n%s==============================================\n", cc->request);
+		else
+			printf("==============================================\n%s==============================================\n", cc->request);
 		/*data* d = cc->dat;
 		while (d) {
 
@@ -140,7 +143,7 @@ int add(int cl_fd) {
 	a->host = (char*)malloc(BUFFER_SIZE);
 	if (!a->host) {
 
-		printf("here12\n");
+		//printf("here12\n");
 		free(a);
 		return -1;
 	}
@@ -191,7 +194,6 @@ int main() {
 		error("Îøèáêà listen");
 	}
 
-	signal(SIGINT, signal_handler);
 	signal(SIGQUIT, signal_log);
 
 	client_socket = accept(server_socket, NULL, NULL);
@@ -199,7 +201,9 @@ int main() {
 
 	add(client_socket);
 
+	signal(SIGINT, signal_handler_hard);
 	printf("\nStarting server\n");
+	signal(SIGINT, signal_handler);
 
 	while (1) {
 		if (!client_head && finish) break;
@@ -259,7 +263,7 @@ int main() {
 				perror("accept");
 				continue;
 			}
-			printf("\tNew client %d\n", client_socket);
+			printf(">New client %d\n", client_socket);
 			add(client_socket);
 		}
 
@@ -271,7 +275,7 @@ int main() {
 				int r = read(cur->cli_fd, buffer, BUFFER_SIZE - 1);
 
 				if (r <= 0) {
-					printf("\tClient %d disconnected\n", cur->cli_fd);
+					printf(">Client %d disconnected\n", cur->cli_fd);
 					cur = clear_connection(cur);
 					continue;
 				}
@@ -288,34 +292,38 @@ int main() {
 					cur->writing_to_client = 0;
 					cur->writing_to_client_total = 0;
 					cur->caching = 1;
+					char method[16];
+					parse_http_request(buffer, hst, method);
 					//Find cache
-					cache* pot_cache = find_cache(buffer);
+					cache* pot_cache = find_cache(buffer, hst);
 					if (pot_cache) {
-						printf("---------Used prepared cache\n");
+						printf("-----Used prepared cache to %s at %d\n", hst, cur->cli_fd);
 						cur->cur_cache = pot_cache;
 						cur->cur_data = pot_cache->dat;
 						cur->using_cache = 1;
 					}
 					else {
 						cur->using_cache = 0;
-						char method[16];
-						parse_http_request(buffer, hst, method);
-						if (strcmp(method, "GET") && strcmp(method, "POST")) {
+						if (strcmp(method, "GET")) {
 							cur = clear_connection(cur);
 							continue;
 						}
-						cur->cur_cache = add_to_cache(buffer);
+						cur->cur_cache = add_to_cache(buffer, hst);
 						cur->cur_cache->working = 1;
-						if (hst[0] != '\0' && (cur->host[0] == '\0' || strcmp(hst, cur->host))) {
+						if (hst[0] != '\0' && (cur->host[0] == '\0' || strcmp(hst, cur->host) || !cur->inet_fd)) {
 							if (cur->inet_fd > 0) {
 								close(cur->inet_fd);
 								cur->inet_fd = 0;
 							}
-							con_to_host(&cur->inet_fd, hst);
 							strncpy(cur->host, hst, BUFFER_SIZE - 1);
 							cur->host[BUFFER_SIZE - 1] = '\0';
+							con_to_host(&cur->inet_fd, hst);
 
-							printf("\tNew req %s at %d\n", cur->host, cur->cli_fd);
+							printf(">>New req %s at %d\n", cur->host, cur->cli_fd);
+						}
+						else {
+							cur = clear_connection(cur);
+							continue;
 						}
 						if ((r = write(cur->inet_fd, buffer, strlen(buffer))) < 0)
 							error("Err: writing in socket");
@@ -360,7 +368,7 @@ int main() {
 						close(cur->inet_fd);
 						cur->inet_fd = 0;
 						cur->writing = 0;
-						printf("Done cache\n");
+						if (!cur->cur_cache) printf("{Done cache\n");
 						cur = cur->next;
 						continue;
 					}
@@ -380,7 +388,7 @@ int main() {
 								if ((status != -1 && status / 100 != 2) || len == -1) {
 									remove_from_cache(cur->cur_cache);
 									cur->cur_cache = NULL;
-									printf("Stop caching ");
+									printf("{Stop caching ");
 									if (len == -1) printf(" no len ");
 									if (status / 100 != 2) printf(" bad status - %d ", status);
 									printf("\n");
@@ -415,7 +423,7 @@ int main() {
 						close(cur->inet_fd);
 						cur->inet_fd = 0;
 						cur->writing = 0;
-						printf("Done cache\n");
+						if (!cur->cur_cache) printf("{Done cache\n");
 					}
 					cur->last_activity = time(NULL);
 				}
