@@ -248,17 +248,6 @@ int main(int argc, char* argv[]) {
                 pthread_cond_wait(&cond_var, &mut);
             }
 
-            client* cur = client_head;
-            while (cur) {
-                client* next = cur->next;
-                close(cur->cli_fd);
-
-                if (cur->inet_fd > 0) close(cur->inet_fd);
-                if (cur->host) free(cur->host);
-                if (cur->headers_collectors) free(cur->headers_collectors);
-                free(cur);
-                cur = next;
-            }
             cache* cache_cur = cache_head;
             while (cache_cur) {
                 cache* next = cache_cur->next;

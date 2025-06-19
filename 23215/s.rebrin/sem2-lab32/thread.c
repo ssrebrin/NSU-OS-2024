@@ -131,40 +131,7 @@ void* cli_thread(void* cl) {
 
 				char method[16], path[256], version[16];
 				sscanf(buffer, "%15s %255s %15s", method, path, version);
-				if (strcmp(method, "CONNECT") == 0) {
-					cli = clear_connection(cli, hd, mut);
-					break;
-					printf("\tCONNECT to %s\n", path);
-					parse_http_request(buffer, hst, &cli->connection);
-					if (hst[0] != '\0' && (cli->host[0] == '\0' || strcmp(hst, cli->host))) {
-						if (cli->inet_fd > 0) {
-							close(cli->inet_fd);
-							cli->inet_fd = 0;
-						}
-						if (con_to_host(&cli->inet_fd, hst)) {
-							cli->inet_fd = 0;
-							cli = clear_connection(cli, hd, mut);
-							break;
-						}
-						else {
-							strncpy(cli->host, hst, BUFFER_SIZE - 1);
-							cli->host[BUFFER_SIZE - 1] = '\0';
-						}
-					}
-
-					const char* response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-					if (write(cli->cli_fd, response, strlen(response)) < 0) {
-						printf("\tError CONNECT request client\n");
-						cli = clear_connection(cli, hd, mut);
-						break;
-					}
-
-					cli->tunneling = 1;
-					cli->using_cache = 0;
-					cli->caching = 0;
-					cli->collect_headers = -1;
-				}
-				else if (strcmp(method, "GET") == 0) {
+				if (strcmp(method, "GET") == 0) {
 					cli->caching = 1;
 					parse_http_request(buffer, hst, &cli->connection);
 					pthread_mutex_lock(mut_cac);
@@ -216,48 +183,7 @@ void* cli_thread(void* cl) {
 			}
 		}
 
-		// Tunneling processing
-		if (cli->tunneling) {
-			if (FD_ISSET(cli->cli_fd, &read_fds)) {
-				int r = read(cli->cli_fd, buffer, BUFFER_SIZE);
-				if (r <= 0) {
-					printf("\tClient %d disconnected in tunneling\n", cli->cli_fd);
-					cli = clear_connection(cli, hd, mut);
-					break;
-				}
-				int written = 0;
-				while (written < r) {
-					int w = write(cli->inet_fd, buffer + written, r - written);
-					if (w < 0) {
-						printf("\tWriting to server in tunneling error\n");
-						cli = clear_connection(cli, hd, mut);
-						break;
-					}
-					written += w;
-				}
-				cli->last_activity = time(NULL);
-			}
-			if (cli->inet_fd && FD_ISSET(cli->inet_fd, &read_fds)) {
-				int r = read(cli->inet_fd, buffer, BUFFER_SIZE);
-				if (r <= 0) {
-					printf("\tServer %s disconnected in tunneling\n", cli->host);
-					cli = clear_connection(cli, hd, mut);
-					break;
-				}
-				int written = 0;
-				while (written < r) {
-					int w = write(cli->cli_fd, buffer + written, r - written);
-					if (w < 0) {
-						printf("\tWriting to client error\n");
-						cli = clear_connection(cli, hd, mut);
-						break;
-					}
-					written += w;
-				}
-				cli->last_activity = time(NULL);
-			}
-		}
-		else {
+		
 			// For slow client
 			if (FD_ISSET(cli->cli_fd, &write_fds) && cli->writing_to_client) {
 				cli->writing_to_client += write(cli->cli_fd, cli->buffer + cli->writing_to_client, cli->writing_to_client_total - cli->writing_to_client);
@@ -371,7 +297,6 @@ void* cli_thread(void* cl) {
 				}
 				cli->last_activity = time(NULL);
 			}
-		}
 	}
 	return NULL;
 }
