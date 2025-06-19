@@ -55,8 +55,8 @@ int con_to_host(int* sockfd, const char* full_host);
 void fix_request_line(char* buf);
 void con_to_cli(int* sockfd);
 void set_nonblocking(int cl_fd);
-void parse_http_request(const char* request, char* host);
+void parse_http_request(const char* request, char* host, int* con);
 int get_content_length_from_headers(const char* headers);
-void parse_headers(const char* headers, int* content_length, int* cache_live, int* status, int* connection);
+void parse_headers(const char* headers, int* content_length, int* cache_live, int* status);
 
 #endif

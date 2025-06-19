@@ -138,7 +138,7 @@ void set_nonblocking(int cl_fd) {
     }
 }
 
-void parse_http_request(const char* request, char* host) {
+void parse_http_request(const char* request, char* host, int* con) {
     char method[16], path[256], version[16];
 
     sscanf(request, "%15s %255s %15s", method, path, version);
@@ -148,6 +148,16 @@ void parse_http_request(const char* request, char* host) {
         sscanf(host_header, "Host: %255s", host);
         char* end = host + strlen(host) - 1;
         while (end >= host && (*end == '\r' || *end == '\n')) *end-- = '\0';
+    }
+
+    *con = 0;
+    const char* connection_header = strstr(request, "Connection:");
+    if (connection_header) {
+        connection_header += strlen("Connection:");
+        while (*connection_header && isspace((unsigned char)*connection_header)) connection_header++;
+        if (strncasecmp(connection_header, "close", 5) == 0) {
+            *con = 1;
+        }
     }
 }
 
@@ -173,11 +183,10 @@ int get_content_length_from_headers(const char* headers) {
     return length;
 }
 
-void parse_headers(const char* headers, int* content_length, int* cache_live, int* status, int* connection) {
+void parse_headers(const char* headers, int* content_length, int* cache_live, int* status) {
     *content_length = -1;
     *cache_live = -1;
     *status = -1;
-    *connection = 0;
 
     const char* content_length_ptr = strstr(headers, "Content-Length:");
     if (content_length_ptr != NULL) {
@@ -221,22 +230,5 @@ void parse_headers(const char* headers, int* content_length, int* cache_live, in
             *status = *status * 10 + (*http_version_ptr - '0');
             http_version_ptr++;
         }
-    }
-
-    const char* connection_ptr = strstr(headers, "Connection:");
-    if (connection_ptr != NULL) {
-        connection_ptr += strlen("Connection:");
-        while (*connection_ptr && isspace(*connection_ptr)) {
-            connection_ptr++;
-        }
-        if (strncasecmp(connection_ptr, "close", 5) == 0) {
-            *connection = 1;
-        }
-        else {
-            *connection = 0;
-        }
-    }
-    else {
-        *connection = 0;
     }
 }

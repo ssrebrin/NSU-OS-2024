@@ -135,7 +135,7 @@ void* cli_thread(void* cl) {
 					cli = clear_connection(cli, hd, mut);
 					break;
 					printf("\tCONNECT to %s\n", path);
-					parse_http_request(buffer, hst);
+					parse_http_request(buffer, hst, &cli->connection);
 					if (hst[0] != '\0' && (cli->host[0] == '\0' || strcmp(hst, cli->host))) {
 						if (cli->inet_fd > 0) {
 							close(cli->inet_fd);
@@ -166,7 +166,7 @@ void* cli_thread(void* cl) {
 				}
 				else if (strcmp(method, "GET") == 0) {
 					cli->caching = 1;
-					parse_http_request(buffer, hst);
+					parse_http_request(buffer, hst, &cli->connection);
 					pthread_mutex_lock(mut_cac);
 					cache* pot_cache = find_cache(buffer, path);
 					if (pot_cache) {
@@ -309,7 +309,7 @@ void* cli_thread(void* cl) {
 						if (cli->len == -1 || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
 							int len, live, status;
 							pthread_mutex_lock(mut_cac);
-							parse_headers(cli->headers_collectors, &len, &live, &status, &cli->connection);
+							parse_headers(cli->headers_collectors, &len, &live, &status);
 							if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
 							if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
 							if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
