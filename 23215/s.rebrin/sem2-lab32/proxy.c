@@ -197,7 +197,7 @@ int main(int argc, char* argv[]) {
             logs();
             los = 0;
         }
-        if (server_socket && stop_server) {
+        if (server_socket && !stop_server) {
             int client_socket = accept(server_socket, NULL, NULL);
             if (stop_server) {
                 close(server_socket);
