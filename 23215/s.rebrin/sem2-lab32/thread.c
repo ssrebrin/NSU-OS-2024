@@ -51,6 +51,7 @@ void* cli_thread(void* cl) {
 	pthread_mutex_t* mut = ((thread_data*)cl)->mut;
 	pthread_mutex_t* mut_cac = ((thread_data*)cl)->mut_cac;
 	int send_flag = ((thread_data*)cl)->send;
+	int an_cache = ((thread_data*)cl)->cac;
 
 
 	struct timeval tv;
@@ -126,6 +127,7 @@ void* cli_thread(void* cl) {
 				cli->writing_to_client = 0;
 				cli->writing_to_client_total = 0;
 				cli->caching = 0;
+				cli->connection = 0;
 
 				char method[16], path[256], version[16];
 				sscanf(buffer, "%15s %255s %15s", method, path, version);
@@ -307,7 +309,7 @@ void* cli_thread(void* cl) {
 							if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
 							if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
 							if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
-							if ((status != -1 && status / 100 != 2) || len == -1) {
+							if ((status != -1 && status / 100 != 2) || (len == -1 && !an_cache)) {
 								remove_from_cache(cli->cur_cache);
 								cli->cur_cache = NULL;
 								printf("{Stop caching ");
@@ -340,7 +342,7 @@ void* cli_thread(void* cl) {
 					add_to_data(cli->cur_cache, cli->buffer, bytes_read);
 				}
 				pthread_mutex_unlock(mut_cac);
-				if (cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
+				if (an_cache || (cli->len != -1 && cli->tot >= cli->len + cli->headers_len)) {
 					if (cli->cur_cache) {
 						pthread_mutex_lock(mut_cac);
 						cli->cur_cache->working = 0;

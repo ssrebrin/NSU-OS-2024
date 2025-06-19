@@ -157,10 +157,15 @@ client* add(int cl_fd) {
 
 int main(int argc, char* argv[]) {
     int send_flag = 0;
+    int an_cache = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0) {
             send_flag = 1;
+            break;
+        }
+        if (strcmp(argv[i], "-a") == 0) {
+            an_cache = 1;
             break;
         }
     }
@@ -213,6 +218,7 @@ int main(int argc, char* argv[]) {
             dat->mut_cac = &mut_cache;
             dat->next = NULL;
             dat->send = send_flag;
+            dat->cac = an_cache;
             if (!dat_cur) {
                 dat_head = dat;
                 dat_cur = dat_head;

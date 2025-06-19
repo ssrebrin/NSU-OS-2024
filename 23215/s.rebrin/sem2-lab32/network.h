@@ -48,6 +48,7 @@ typedef struct client {
     char* headers_collectors;/* Buffer for accumulating HTTP headers until fully parsed (e.g., until \r\n\r\n is found) */
     struct client* next;     /* Pointer to the next client in the linked list */
     int tunneling;           /* Tunneling */
+    int connection;
 } client;
 
 int con_to_host(int* sockfd, const char* full_host);
