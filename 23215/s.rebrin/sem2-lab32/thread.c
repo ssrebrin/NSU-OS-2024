@@ -97,7 +97,7 @@ void* cli_thread(void* cl) {
 		if (FD_ISSET(cli->cli_fd, &read_fds) && !cli->tunneling) {
 			int r = read(cli->cli_fd, buffer, BUFFER_SIZE - 1);
 			if (r <= 0) {
-				if (cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
+				if (cli->inet_fd && cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
 					if (cli->cur_cache) {
 						pthread_mutex_lock(mut_cac);
 						cli->cur_cache->working = 0;
