@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include "network.h"
 #include "cache.h"
 #include "thread.h"
@@ -18,6 +19,7 @@
 #define HOST "127.0.0.1:6000"
 #define LOG 1
 
+int los = 0;
 int sockfd;
 int server_socket;
 client* client_head = NULL;
@@ -27,10 +29,17 @@ pthread_mutex_t mut;
 pthread_mutexattr_t attr;
 pthread_mutex_t mut_cache;
 pthread_mutexattr_t attr_cache;
+thread_data* dat_head = NULL;
+thread_data* dat_cur = NULL;
+
+atomic_int inter = 0;
+pthread_cond_t cond_var = PTHREAD_COND_INITIALIZER;
 
 void logs() {
     if (LOG) {
+        
         pthread_mutex_lock(&mut);
+        pthread_mutex_lock(&mut_cache);
         time_t lst = time(NULL);
         last_log = lst;
         client* cur = client_head;
@@ -62,34 +71,35 @@ void logs() {
         }
         printf("\n");
         pthread_mutex_unlock(&mut);
+        pthread_mutex_unlock(&mut_cache);
     }
 }
 
 void signal_log(int sig) {
-    logs();
+    los = 1;
     signal(SIGQUIT, signal_log);
+}
+
+
+void free_dat(thread_data* cur) {
+    if (!cur) return;
+    if (cur->next)
+        free_dat(cur->next);
+    free(cur);
+    return;
+}
+
+
+
+void sig_hard(int sig) {
+    atomic_store(&inter, 1);
 }
 
 void signal_handler(int sig) {
     close(server_socket);
-    client* cur = client_head;
-    while (cur) {
-        client* next = cur->next;
-        close(cur->cli_fd);
-
-        if (cur->inet_fd > 0) close(cur->inet_fd);
-        if (cur->host) free(cur->host);
-        if (cur->headers_collectors) free(cur->headers_collectors);
-        free(cur);
-        cur = next;
-    }
-    cache* cache_cur = cache_head;
-    while (cache_cur) {
-        cache* next = cache_cur->next;
-        remove_from_cache(cache_cur);
-        cache_cur = next;
-    }
-    exit(0);
+    server_socket = 0;
+    printf("Waiting for threads\n");
+    signal(SIGINT, sig_hard);
 }
 
 void error(const char* msg) {
@@ -155,37 +165,98 @@ int main() {
     last_log = time(NULL);
     signal(SIGQUIT, signal_log);
 
+    atomic_store(&inter, 0);
+
     con_to_cli(&server_socket);
     if (listen(server_socket, 5) < 0) {
         error("listen error");
     }
 
-    signal(SIGINT, signal_handler);
+    struct sigaction sa;
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0; 
+    sigaction(SIGINT, &sa, NULL);
 
     printf("\nServer starting\n");
 
     while (1) {
-
-        int client_socket = accept(server_socket, NULL, NULL);
-        if (client_socket < 0) {
-            perror("accept");
-            continue;
+        if (los) {
+            logs();
+            los = 0;
         }
-        printf(">New client %d\n", client_socket);
-        
+        if (server_socket) {
+            int client_socket = accept(server_socket, NULL, NULL);
+            if (!server_socket) continue;
+            if (client_socket < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                perror("accept");
+                break;
+            }
+            printf(">New client %d\n", client_socket);
 
-        thread_data* dat = (thread_data*)malloc(sizeof(thread_data));
-        dat->cl = add(client_socket);
-        dat->cl_h = &client_head;
-        dat->mut = &mut;
-        dat->mut_cac = &mut_cache;
+            thread_data* dat = (thread_data*)malloc(sizeof(thread_data));
+            dat->cl = add(client_socket);
+            dat->cl_h = &client_head;
+            dat->mut = &mut;
+            dat->mut_cac = &mut_cache;
+            dat->next = NULL;
+            if (!dat_cur) {
+                dat_head = dat;
+                dat_cur = dat_head;
+                dat->next = NULL;
+            }
+            else {
+                dat_cur->next = dat;
+                dat_cur = dat;
+            }
 
-        int code = pthread_create(&dat->cl->thr, NULL, cli_thread, dat);
-        if (code != 0) {
-            char buf[256];
-            strerror_r(code, buf, sizeof buf);
-            fprintf(stderr, "Creating thread: %s\n", buf);
-            exit(1);
+            int code = pthread_create(&dat->cl->thr, NULL, cli_thread, dat);
+            if (code != 0) {
+                char buf[256];
+                strerror_r(code, buf, sizeof buf);
+                fprintf(stderr, "Creating thread: %s\n", buf);
+                exit(1);
+            }
+        }
+        else {
+
+
+            signal(SIGINT, sig_hard);
+
+            pthread_mutex_lock(&mut);
+
+            while (client_head != NULL) {
+                pthread_cond_wait(&cond_var, &mut);
+            }
+
+            client* cur = client_head;
+            while (cur) {
+                client* next = cur->next;
+                close(cur->cli_fd);
+
+                if (cur->inet_fd > 0) close(cur->inet_fd);
+                if (cur->host) free(cur->host);
+                if (cur->headers_collectors) free(cur->headers_collectors);
+                free(cur);
+                cur = next;
+            }
+            cache* cache_cur = cache_head;
+            while (cache_cur) {
+                cache* next = cache_cur->next;
+                remove_from_cache(cache_cur);
+                cache_cur = next;
+            }
+
+            free_dat(dat_head);
+
+            pthread_mutex_unlock(&mut);
+            pthread_mutex_destroy(&mut);
+            pthread_mutex_destroy(&mut_cache);
+            pthread_cond_destroy(&cond_var);
+            exit(0);
         }
 
     }

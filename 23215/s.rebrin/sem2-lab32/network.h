@@ -50,7 +50,7 @@ typedef struct client {
     int tunneling;           /* Tunneling */
 } client;
 
-int con_to_host(int* sockfd, char* host);
+int con_to_host(int* sockfd, const char* full_host);
 void con_to_cli(int* sockfd);
 void set_nonblocking(int cl_fd);
 void parse_http_request(const char* request, char* host);

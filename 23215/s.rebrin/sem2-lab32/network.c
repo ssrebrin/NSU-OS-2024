@@ -11,55 +11,62 @@
 
 void error(const char* msg);
 
-int con_to_host(int* sockfd, char* full_host) {
+int con_to_host(int* sockfd, const char* full_host) {
     errno = 0;
-    char host[256];
-    int port = 80; 
 
+    char host[256];
+    char port_str[6] = "80";  // Default port: 80
+
+  
     const char* colon = strchr(full_host, ':');
     if (colon) {
         size_t host_len = colon - full_host;
         if (host_len >= sizeof(host)) {
-            perror("Hostname too long");
+            fprintf(stderr, "Hostname too long\n");
             return 1;
         }
         strncpy(host, full_host, host_len);
         host[host_len] = '\0';
-        port = atoi(colon + 1);
+
+        int port = atoi(colon + 1);
         if (port <= 0 || port > 65535) {
-            perror("Invalid port");
+            fprintf(stderr, "Invalid port number\n");
             return 1;
         }
+        snprintf(port_str, sizeof(port_str), "%d", port);
     }
     else {
         strncpy(host, full_host, sizeof(host) - 1);
         host[sizeof(host) - 1] = '\0';
     }
 
-    struct hostent* server;
-    struct sockaddr_in serv_addr;
+    struct addrinfo hints = { 0 }, * res = NULL, * p;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
-    *sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (*sockfd < 0)
-        error("Creating socket error");
-
-    server = gethostbyname(host);
-    if (server == NULL) {
-        fprintf(stderr, "Error: no such host: %s (h_errno: %d)\n", host, h_errno);
-        perror("DNS resolution failed");
+    int err = getaddrinfo(host, port_str, &hints, &res);
+    if (err != 0) {
+        fprintf(stderr, "DNS resolution failed for %s: %s\n", host, gai_strerror(err));
         return 1;
     }
 
-    memset(&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(port);
+    for (p = res; p != NULL; p = p->ai_next) {
+        *sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (*sockfd < 0) continue;
 
-    if (connect(*sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Connection error");
-        printf("return 1");
+        if (connect(*sockfd, p->ai_addr, p->ai_addrlen) == 0) break; // Успех
+
+        close(*sockfd);
+        *sockfd = -1;
+    }
+
+    freeaddrinfo(res);
+
+    if (*sockfd < 0) {
+        perror("Unable to connect");
         return 1;
     }
+
     return 0;
 }
 

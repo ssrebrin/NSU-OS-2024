@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -g
-LDFLAGS = #-lsocket -lnsl
-OBJECTS = proxy.o network.o cache.o
+LDFLAGS = -pthread #-lsocket -lnsl
+OBJECTS = proxy.o network.o cache.o thread.o
 TARGET = proxy
 
 all: $(TARGET)
@@ -17,5 +17,8 @@ network.o: network.c network.h
 
 cache.o: cache.c cache.h
 	$(CC) $(CFLAGS) -c cache.c
+
+thread.o: thread.c thread.h
+	$(CC) $(CFLAGS) -c thread.c
 
 .PHONY: all clean

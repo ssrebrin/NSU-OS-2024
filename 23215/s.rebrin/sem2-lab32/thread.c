@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include "network.h"
 #include "cache.h"
 #include "thread.h"
@@ -24,6 +25,7 @@ int minn(int a, int b) {
 
 client* clear_connection(client* cur, client** hd, pthread_mutex_t* mut) {
 	pthread_mutex_lock(mut);
+	printf(">Clearing %d\n", cur->cli_fd);
 	client* next = cur->next;
 	close(cur->cli_fd);
 	if (cur->inet_fd > 0) close(cur->inet_fd);
@@ -34,8 +36,10 @@ client* clear_connection(client* cur, client** hd, pthread_mutex_t* mut) {
 
 	if (cur->headers_collectors)
 		free(cur->headers_collectors);
+	if (cur->host) free(cur->host);
 	cur->headers_collectors = NULL;
 	free(cur);
+	pthread_cond_signal(&cond_var);
 	pthread_mutex_unlock(mut);
 	return next;
 }
@@ -55,6 +59,11 @@ void* cli_thread(void* cl) {
 	fd_set read_fds, write_fds;
 
 	while (1) {
+		if (atomic_load(&inter)) {
+			clear_connection(cli, hd, mut);
+			break;
+		}
+
 		if (time(NULL) - cli->last_activity > CLIENT_TIMEOUT) {
 			printf("\tClient %d timed out\n", cli->cli_fd);
 			cli = clear_connection(cli, hd, mut);
@@ -98,7 +107,7 @@ void* cli_thread(void* cl) {
 					close(cli->inet_fd);
 					cli->inet_fd = 0;
 					cli->writing = 0;
-					printf("Done cache\n");
+					printf("{Done cache\n");
 				}
 				printf("\tClient %d disconnected\n", cli->cli_fd);
 				cli = clear_connection(cli, hd, mut);
@@ -159,7 +168,7 @@ void* cli_thread(void* cl) {
 					pthread_mutex_lock(mut_cac);
 					cache* pot_cache = find_cache(buffer, hst);
 					if (pot_cache) {
-						printf("-----Using prepeared cache\n");
+						printf("-----Using prepeared cache at %s\n", hst);
 						cli->cur_cache = pot_cache;
 						cli->cur_data = pot_cache->dat;
 						cli->using_cache = 1;
@@ -185,7 +194,7 @@ void* cli_thread(void* cl) {
 							else {
 								strncpy(cli->host, hst, BUFFER_SIZE - 1);
 								cli->host[BUFFER_SIZE - 1] = '\0';
-								printf("[%s]\n", cli->host);
+								//printf("[%s]\n", cli->host);
 							}
 							printf(">>New req %s to %d\n", cli->host, cli->cli_fd);
 						}
@@ -286,18 +295,20 @@ void* cli_thread(void* cl) {
 				// Headers parsing
 				if (cli->collect_headers != -1) {
 					strncpy(cli->headers_collectors + cli->collect_headers, cli->buffer, minn(4096, cli->collect_headers + bytes_read));
+					cli->collect_headers += bytes_read;
+					cli->headers_collectors[cli->collect_headers] = 0;
 					if (strstr(cli->headers_collectors, "\r\n\r\n")) {
-						if (!cli->len || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
+						if (cli->len == -1 || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
 							int len, live, status;
 							pthread_mutex_lock(mut_cac);
-							parse_headers(cli->buffer, &len, &live, &status);
-							if (!cli->len) cli->len = len == -1 ? cli->len : len;
+							parse_headers(cli->headers_collectors, &len, &live, &status);
+							if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
 							if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
 							if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
 							if ((status != -1 && status / 100 != 2) || len == -1) {
 								remove_from_cache(cli->cur_cache);
 								cli->cur_cache = NULL;
-								printf("Stop caching ");
+								printf("{Stop caching ");
 								if (len == -1) printf("no length ");
 								if (status / 100 != 2) printf("bad status - %d ", status);
 								printf("\n");
@@ -337,7 +348,7 @@ void* cli_thread(void* cl) {
 					close(cli->inet_fd);
 					cli->inet_fd = 0;
 					cli->writing = 0;
-					printf("Done cache\n");
+					printf("{Done cache\n");
 				}
 				cli->last_activity = time(NULL);
 			}

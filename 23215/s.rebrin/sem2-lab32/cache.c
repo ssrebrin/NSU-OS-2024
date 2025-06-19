@@ -70,7 +70,7 @@ void get_header_value(const char* headers, const char* name, char* value) {
         const char* colon = strchr(line_start, ':');
         if (!colon) break;
 
-        size_t key_len = colon - line_start;
+        //size_t key_len = colon - line_start;
 
         if (strncasecmp(line_start, name, name_len) == 0 && line_start[name_len] == ':') {
             const char* val_start = colon + 1;
@@ -89,23 +89,27 @@ void get_header_value(const char* headers, const char* name, char* value) {
         p++;
     }
 
-    return;
+    value[0] = '\0';
 }
 
 
-int vary_headers_match(const char* req1, const char* req2) {
-    //printf("herere\n");
-    char* vary_value = (char*)malloc(1024);
-    get_header_value(req1, "Vary", vary_value);
-    if (!vary_value) return 1;
 
-    char* v1 = (char*)malloc(1024);
-    char* v2 = (char*)malloc(1024);
+int vary_headers_match(const char* req1, const char* req2) {
+    char* vary_value = (char*)calloc(1024, 1);
+    get_header_value(req1, "Vary", vary_value);
+    if (!vary_value[0]) {
+        free(vary_value);
+        return 1;
+    }
 
     if (strchr(vary_value, '*')) {
         free(vary_value);
         return 1;
     }
+
+    char* v1 = (char*)calloc(1024, 1);
+    char* v2 = (char*)calloc(1024, 1);
+
 
     char header[128];
     const char* p = vary_value;
@@ -118,10 +122,11 @@ int vary_headers_match(const char* req1, const char* req2) {
             header[i++] = *p++;
         }
         header[i] = '\0';
-
+        memset(v1, 0, 1024);
+        memset(v2, 0, 1024);
         get_header_value(req1, header, v1);
         get_header_value(req2, header, v2);
-        if (!v1 || !v2 || strcmp(v1, v2) != 0) {
+        if (!v1[0] || !v2[0] || strcmp(v1, v2) != 0) {
             free(v1);
             free(v2);
             free(vary_value);
@@ -145,11 +150,12 @@ void fr_data(data* d) {
 }
 
 cache* find_cache(char* buf, char* host) {
+    printf(">>>%s\n", buf);
     cache* cur = cache_head;
     while (cur) {
-        //printf(">(%s) (%s)", host, cur->host);
         if (!cur->working && !strcmp(host, cur->host) && vary_headers_match(buf, cur->request)) return cur;
         cur = cur->next;
+        printf("{No cache to %s\n", host);
     }
     return NULL;
 }
@@ -163,6 +169,7 @@ void remove_from_cache(cache* a) {
         *p = a->next;
         fr_data(a->dat);
         free(a->request);
+        free(a->host);
         free(a);
     }
 }
