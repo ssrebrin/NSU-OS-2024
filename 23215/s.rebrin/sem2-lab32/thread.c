@@ -168,7 +168,7 @@ void* cli_thread(void* cl) {
 					cli->caching = 1;
 					parse_http_request(buffer, hst);
 					pthread_mutex_lock(mut_cac);
-					cache* pot_cache = find_cache(buffer, hst);
+					cache* pot_cache = find_cache(buffer, path);
 					if (pot_cache) {
 						printf("-----Using prepeared cache at %s\n", hst);
 						cli->cur_cache = pot_cache;
@@ -178,7 +178,7 @@ void* cli_thread(void* cl) {
 					}
 					else {
 						cli->using_cache = 0;
-						cli->cur_cache = add_to_cache(buffer, hst);
+						cli->cur_cache = add_to_cache(buffer, path);
 						cli->cur_cache->working = 1;
 						pthread_mutex_unlock(mut_cac);
 						if (hst[0] != '\0' && (cli->host[0] == '\0' || strcmp(hst, cli->host))) {
