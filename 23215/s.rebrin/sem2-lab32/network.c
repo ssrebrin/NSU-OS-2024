@@ -151,9 +151,9 @@ void parse_http_request(const char* request, char* host, int* con) {
     }
 
     *con = 0;
-    const char* connection_header = strstr(request, "Connection:");
+    const char* connection_header = strstr(request, "\r\nConnection:");
     if (connection_header) {
-        connection_header += strlen("Connection:");
+        connection_header += strlen("\r\nConnection:");
         while (*connection_header && isspace((unsigned char)*connection_header)) connection_header++;
         if (strncasecmp(connection_header, "close", 5) == 0) {
             *con = 1;
