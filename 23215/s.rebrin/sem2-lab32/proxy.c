@@ -112,7 +112,7 @@ client* add(int cl_fd) {
 
     pthread_mutex_lock(&mut);
     a->cli_fd = cl_fd;
-    set_nonblocking(cl_fd);
+    //set_nonblocking(cl_fd);
     a->next = NULL;
     a->tot = 0;
     a->len = 0;

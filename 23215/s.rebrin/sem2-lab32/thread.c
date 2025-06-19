@@ -44,6 +44,7 @@ client* clear_connection(client* cur, client** hd, pthread_mutex_t* mut) {
 }
 
 void* cli_thread(void* cl) {
+	int bytes_read = 0;
 	char buffer[BUFFER_SIZE];
 	char hst[1024];
 	client* cli = ((thread_data*)cl)->cl;
@@ -60,6 +61,7 @@ void* cli_thread(void* cl) {
 	fd_set read_fds, write_fds;
 
 	while (1) {
+		//printf("%d\n", bytes_read);
 		if (atomic_load(&inter)) {
 			clear_connection(cli, hd, mut);
 			break;
@@ -74,9 +76,9 @@ void* cli_thread(void* cl) {
 		int max_fd = cli->cli_fd + cli->inet_fd - minn(cli->cli_fd, cli->inet_fd);
 		FD_ZERO(&read_fds);
 		FD_ZERO(&write_fds);
-		FD_SET(cli->cli_fd, &read_fds);
-		FD_SET(cli->cli_fd, &write_fds);
-		if (cli->inet_fd > 0) FD_SET(cli->inet_fd, &read_fds);
+		 FD_SET(cli->cli_fd, &read_fds);
+		if (bytes_read) FD_SET(cli->cli_fd, &write_fds);
+		if (cli->inet_fd > 0 && !bytes_read) FD_SET(cli->inet_fd, &read_fds);
 		if (cli->cli_fd > max_fd) max_fd = cli->cli_fd;
 		if (cli->inet_fd > max_fd) max_fd = cli->inet_fd;
 
@@ -96,6 +98,7 @@ void* cli_thread(void* cl) {
 
 
 		if (FD_ISSET(cli->cli_fd, &read_fds) && !cli->tunneling) {
+
 			int r = read(cli->cli_fd, buffer, BUFFER_SIZE - 1);
 			if (r <= 0) {
 				if (cli->inet_fd && cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
@@ -183,120 +186,127 @@ void* cli_thread(void* cl) {
 			}
 		}
 
-		
-			// For slow client
-			if (FD_ISSET(cli->cli_fd, &write_fds) && cli->writing_to_client) {
-				cli->writing_to_client += write(cli->cli_fd, cli->buffer + cli->writing_to_client, cli->writing_to_client_total - cli->writing_to_client);
-				if (cli->writing_to_client == cli->writing_to_client_total) cli->writing_to_client = 0;
-				if (STAY_CONNECTION_IN_WRITING_FROM_BUFFER) cli->last_activity = time(NULL);
-				printf("+++++++++++++++++Used\n");
-			}
-			//if (FD_ISSET(cli->cli_fd, &write_fds)) printf("fdfsdfasdfasdfasfasfdfsdfSDF\n");
-			// Cache processing
-			if (cli->using_cache && FD_ISSET(cli->cli_fd, &write_fds) && !cli->writing_to_client && cli->cur_data && cli->writing) {
-				memcpy(cli->buffer, cli->cur_data->data, cli->cur_data->len);
-				cli->writing_to_client = write(cli->cli_fd, cli->buffer, cli->cur_data->len);
-				cli->writing_to_client_total = cli->cur_data->len;
-				if (cli->writing_to_client == cli->cur_data->len) cli->writing_to_client = 0;
-				cli->last_activity = time(NULL);
-				cli->cur_data = cli->cur_data->next;
-				if (!cli->cur_data) {
-					cli->writing = 0;
 
-					if (cli->connection) {
-						cli = clear_connection(cli, hd, mut);
-						return NULL;
-					}
-				}
-			}
-			else if (cli->inet_fd && FD_ISSET(cli->cli_fd, &write_fds) && FD_ISSET(cli->inet_fd, &read_fds) && !cli->writing_to_client && (cli->tot <= cli->len + cli->headers_len || cli->len == -1)) {
-				int bytes_read = read(cli->inet_fd, cli->buffer, BUFFER_SIZE - 1);
-				if (bytes_read < 0) {
-					printf("\tReading from socket error\n");
+		// For slow client
+		if (FD_ISSET(cli->cli_fd, &write_fds) && cli->writing_to_client) {
+			cli->writing_to_client += write(cli->cli_fd, cli->buffer + cli->writing_to_client, cli->writing_to_client_total - cli->writing_to_client);
+			if (cli->writing_to_client == cli->writing_to_client_total) cli->writing_to_client = 0;
+			if (STAY_CONNECTION_IN_WRITING_FROM_BUFFER) cli->last_activity = time(NULL);
+			printf("+++++++++++++++++Used\n");
+		}
+		//if (FD_ISSET(cli->cli_fd, &write_fds)) printf("fdfsdfasdfasdfasfasfdfsdfSDF\n");
+		// Cache processing
+		if (cli->using_cache && FD_ISSET(cli->cli_fd, &write_fds) && !cli->writing_to_client && cli->cur_data && cli->writing) {
+			memcpy(cli->buffer, cli->cur_data->data, cli->cur_data->len);
+			cli->writing_to_client = write(cli->cli_fd, cli->buffer, cli->cur_data->len);
+			cli->writing_to_client_total = cli->cur_data->len;
+			if (cli->writing_to_client == cli->cur_data->len) cli->writing_to_client = 0;
+			cli->last_activity = time(NULL);
+			cli->cur_data = cli->cur_data->next;
+			if (!cli->cur_data) {
+				cli->writing = 0;
+
+				if (cli->connection) {
 					cli = clear_connection(cli, hd, mut);
-					break;
+					return NULL;
 				}
-				if (bytes_read == 0) {
-					if (cli->cur_cache) {
-						pthread_mutex_lock(mut_cac);
-						cli->cur_cache->working = 0;
-						printf("{Done cache\n");
-						pthread_mutex_unlock(mut_cac);
-					}
-					close(cli->inet_fd);
-					cli->inet_fd = 0;
-					cli->writing = 0;
-					if (cli->connection) {
-						cli = clear_connection(cli, hd, mut);
-						return NULL;
-					}
-					continue;
-				}
-
-				// Headers parsing
-				if (cli->collect_headers != -1) {
-					strncpy(cli->headers_collectors + cli->collect_headers, cli->buffer, minn(4096, cli->collect_headers + bytes_read));
-					cli->collect_headers += bytes_read;
-					cli->headers_collectors[cli->collect_headers] = 0;
-					if (strstr(cli->headers_collectors, "\r\n\r\n")) {
-						if (cli->len == -1 || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
-							int len, live, status;
-							pthread_mutex_lock(mut_cac);
-							parse_headers(cli->headers_collectors, &len, &live, &status);
-							if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
-							if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
-							if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
-							if ((status != -1 && status / 100 != 2) || (len == -1 && !an_cache)) {
-								remove_from_cache(cli->cur_cache);
-								cli->cur_cache = NULL;
-								printf("{Stop caching ");
-								if (len == -1) printf("no length ");
-								if (status / 100 != 2) printf("bad status - %d ", status);
-								printf("\n");
-							}
-							pthread_mutex_unlock(mut_cac);
-						}
-						if (!cli->headers_len) {
-							char* header_end = strstr(cli->buffer, "\r\n\r\n");
-							if (header_end) cli->headers_len = cli->tot + (header_end - cli->buffer) + 4;
-						}
-						if (cli->headers_collectors)
-							free(cli->headers_collectors);
-						cli->headers_collectors = NULL;
-						cli->collect_headers = -1;
-					}
-				}
-
-				// Getting data
-				cli->buffer[bytes_read] = '\0';
-				cli->writing_to_client = write(cli->cli_fd, cli->buffer, bytes_read);
-				cli->writing_to_client_total = bytes_read;
-				printf("\tI get %d: %d bytes from %d, and send %d bytes\n", bytes_read, cli->tot + bytes_read, cli->len + cli->headers_len, cli->writing_to_client);
-				if (cli->writing_to_client >= bytes_read) cli->writing_to_client = 0;
-				cli->tot += bytes_read;
-				pthread_mutex_lock(mut_cac);
-				if (cli->cur_cache && cli->cur_cache->working) {
-					add_to_data(cli->cur_cache, cli->buffer, bytes_read);
-				}
-				pthread_mutex_unlock(mut_cac);
-				if (cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
-					if (cli->cur_cache) {
-						pthread_mutex_lock(mut_cac);
-						cli->cur_cache->working = 0;
-						pthread_mutex_unlock(mut_cac);
-					}
-					//printf("here\n");
-					close(cli->inet_fd);
-					cli->inet_fd = 0;
-					cli->writing = 0;
-					printf("{Done cache\n");
-					if (cli->connection) {
-						cli = clear_connection(cli, hd, mut);
-						return NULL;
-					}
-				}
-				cli->last_activity = time(NULL);
 			}
+		}
+		else if (FD_ISSET(cli->inet_fd, &read_fds) && !cli->writing_to_client && (cli->tot <= cli->len + cli->headers_len || cli->len == -1)) {
+			bytes_read = read(cli->inet_fd, cli->buffer, BUFFER_SIZE - 1);
+			if (bytes_read < 0) {
+				printf("\tReading from socket error\n");
+				cli = clear_connection(cli, hd, mut);
+				break;
+			}
+			if (bytes_read == 0) {
+				if (cli->cur_cache) {
+					pthread_mutex_lock(mut_cac);
+					cli->cur_cache->working = 0;
+					printf("{Done cache\n");
+					pthread_mutex_unlock(mut_cac);
+				}
+				close(cli->inet_fd);
+				cli->inet_fd = 0;
+				cli->writing = 0;
+				if (cli->connection) {
+					cli = clear_connection(cli, hd, mut);
+					return NULL;
+				}
+				continue;
+			}
+
+			// Headers parsing
+			if (cli->collect_headers != -1) {
+				strncpy(cli->headers_collectors + cli->collect_headers, cli->buffer, minn(4096, cli->collect_headers + bytes_read));
+				cli->collect_headers += bytes_read;
+				cli->headers_collectors[cli->collect_headers] = 0;
+				if (strstr(cli->headers_collectors, "\r\n\r\n")) {
+					if (cli->len == -1 || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
+						int len, live, status;
+						pthread_mutex_lock(mut_cac);
+						parse_headers(cli->headers_collectors, &len, &live, &status);
+						if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
+						if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
+						if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
+						if ((status != -1 && status / 100 != 2) || (len == -1 && !an_cache)) {
+							remove_from_cache(cli->cur_cache);
+							cli->cur_cache = NULL;
+							printf("{Stop caching ");
+							if (len == -1) printf("no length ");
+							if (status / 100 != 2) printf("bad status - %d ", status);
+							printf("\n");
+						}
+						pthread_mutex_unlock(mut_cac);
+					}
+					if (!cli->headers_len) {
+						char* header_end = strstr(cli->buffer, "\r\n\r\n");
+						if (header_end) cli->headers_len = cli->tot + (header_end - cli->buffer) + 4;
+					}
+					if (cli->headers_collectors)
+						free(cli->headers_collectors);
+					cli->headers_collectors = NULL;
+					cli->collect_headers = -1;
+				}
+			}
+
+
+
+		}
+		// Getting data
+		else if (cli->inet_fd && FD_ISSET(cli->cli_fd, &write_fds)) {
+
+			cli->buffer[bytes_read] = '\0';
+			cli->writing_to_client = write(cli->cli_fd, cli->buffer, bytes_read);
+			cli->writing_to_client_total = bytes_read;
+			printf("\tI get %d: %d bytes from %d, and send %d bytes\n", bytes_read, cli->tot + bytes_read, cli->len + cli->headers_len, cli->writing_to_client);
+			if (cli->writing_to_client >= bytes_read) cli->writing_to_client = 0;
+			cli->tot += bytes_read;
+			pthread_mutex_lock(mut_cac);
+			if (cli->cur_cache && cli->cur_cache->working) {
+				add_to_data(cli->cur_cache, cli->buffer, bytes_read);
+			}
+			pthread_mutex_unlock(mut_cac);
+			if (cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
+				if (cli->cur_cache) {
+					pthread_mutex_lock(mut_cac);
+					cli->cur_cache->working = 0;
+					pthread_mutex_unlock(mut_cac);
+				}
+				//printf("here\n");
+				close(cli->inet_fd);
+				cli->inet_fd = 0;
+				cli->writing = 0;
+				printf("{Done cache\n");
+				if (cli->connection) {
+					cli = clear_connection(cli, hd, mut);
+					return NULL;
+				}
+			}
+			cli->last_activity = time(NULL);
+			bytes_read = 0;
+		}
+	
 	}
 	return NULL;
 }
