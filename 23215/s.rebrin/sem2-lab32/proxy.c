@@ -186,6 +186,7 @@ int main() {
             los = 0;
         }
         if (server_socket) {
+            if (!server_socket) continue;
             int client_socket = accept(server_socket, NULL, NULL);
             if (!server_socket) continue;
             if (client_socket < 0) {
