@@ -293,6 +293,10 @@ void* cli_thread(void* cl) {
 					close(cli->inet_fd);
 					cli->inet_fd = 0;
 					cli->writing = 0;
+					if (cli->connection) {
+						cli = clear_connection(cli, hd, mut);
+						return NULL;
+					}
 					continue;
 				}
 
@@ -305,7 +309,7 @@ void* cli_thread(void* cl) {
 						if (cli->len == -1 || cli->cur_cache->live_time == -1 || cli->cur_cache->status_code == -1) {
 							int len, live, status;
 							pthread_mutex_lock(mut_cac);
-							parse_headers(cli->headers_collectors, &len, &live, &status);
+							parse_headers(cli->headers_collectors, &len, &live, &status, &cli->connection);
 							if (cli->len == -1) cli->len = len == -1 ? cli->len : len;
 							if (cli->cur_cache->live_time == -1) cli->cur_cache->live_time = live == -1 ? cli->cur_cache->live_time : 60;
 							if (cli->cur_cache->status_code == -1) cli->cur_cache->status_code = status == -1 ? cli->cur_cache->status_code : status;
@@ -342,7 +346,7 @@ void* cli_thread(void* cl) {
 					add_to_data(cli->cur_cache, cli->buffer, bytes_read);
 				}
 				pthread_mutex_unlock(mut_cac);
-				if (an_cache || (cli->len != -1 && cli->tot >= cli->len + cli->headers_len)) {
+				if (cli->len != -1 && cli->tot >= cli->len + cli->headers_len) {
 					if (cli->cur_cache) {
 						pthread_mutex_lock(mut_cac);
 						cli->cur_cache->working = 0;
@@ -353,6 +357,10 @@ void* cli_thread(void* cl) {
 					cli->inet_fd = 0;
 					cli->writing = 0;
 					printf("{Done cache\n");
+					if (cli->connection) {
+						cli = clear_connection(cli, hd, mut);
+						return NULL;
+					}
 				}
 				cli->last_activity = time(NULL);
 			}

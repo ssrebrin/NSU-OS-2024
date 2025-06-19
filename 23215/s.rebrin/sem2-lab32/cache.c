@@ -150,13 +150,13 @@ void fr_data(data* d) {
 }
 
 cache* find_cache(char* buf, char* host) {
-    printf(">>>%s\n", buf);
+    //printf(">>>%s\n", buf);
     cache* cur = cache_head;
     while (cur) {
         if (!cur->working && !strcmp(host, cur->host) && vary_headers_match(buf, cur->request)) return cur;
         cur = cur->next;
-        printf("{No cache to %s\n", host);
     }
+    printf("{No cache to %s\n", host);
     return NULL;
 }
 

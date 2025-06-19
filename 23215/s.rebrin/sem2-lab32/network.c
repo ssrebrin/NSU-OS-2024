@@ -173,10 +173,11 @@ int get_content_length_from_headers(const char* headers) {
     return length;
 }
 
-void parse_headers(const char* headers, int* content_length, int* cache_live, int* status) {
+void parse_headers(const char* headers, int* content_length, int* cache_live, int* status, int* connection) {
     *content_length = -1;
     *cache_live = -1;
     *status = -1;
+    *connection = 0;
 
     const char* content_length_ptr = strstr(headers, "Content-Length:");
     if (content_length_ptr != NULL) {
@@ -208,7 +209,6 @@ void parse_headers(const char* headers, int* content_length, int* cache_live, in
 
     const char* http_version_ptr = strstr(headers, "HTTP/");
     if (http_version_ptr != NULL) {
-        // Пропускаем "HTTP/x.x "
         while (*http_version_ptr && !isspace(*http_version_ptr)) {
             http_version_ptr++;
         }
@@ -221,5 +221,22 @@ void parse_headers(const char* headers, int* content_length, int* cache_live, in
             *status = *status * 10 + (*http_version_ptr - '0');
             http_version_ptr++;
         }
+    }
+
+    const char* connection_ptr = strstr(headers, "Connection:");
+    if (connection_ptr != NULL) {
+        connection_ptr += strlen("Connection:");
+        while (*connection_ptr && isspace(*connection_ptr)) {
+            connection_ptr++;
+        }
+        if (strncasecmp(connection_ptr, "close", 5) == 0) {
+            *connection = 1;
+        }
+        else {
+            *connection = 0;
+        }
+    }
+    else {
+        *connection = 0;
     }
 }
