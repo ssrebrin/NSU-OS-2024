@@ -274,7 +274,14 @@ void* cli_thread(void* cl) {
 				if (cli->writing_to_client == cli->cur_data->len) cli->writing_to_client = 0;
 				cli->last_activity = time(NULL);
 				cli->cur_data = cli->cur_data->next;
-				if (!cli->cur_data) cli->writing = 0;
+				if (!cli->cur_data) {
+					cli->writing = 0;
+
+					if (cli->connection) {
+						cli = clear_connection(cli, hd, mut);
+						return NULL;
+					}
+				}
 			}
 			else if (cli->inet_fd && FD_ISSET(cli->cli_fd, &write_fds) && FD_ISSET(cli->inet_fd, &read_fds) && !cli->writing_to_client && (cli->tot <= cli->len + cli->headers_len || cli->len == -1)) {
 				int bytes_read = read(cli->inet_fd, cli->buffer, BUFFER_SIZE - 1);
