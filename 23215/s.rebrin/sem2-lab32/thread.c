@@ -32,7 +32,6 @@ client* clear_connection(client* cur, client** hd, pthread_mutex_t* mut) {
 	client** p = hd;
 	while (*p && *p != cur) p = &(*p)->next;
 	if (*p) *p = next;
-	free(cur->host);
 
 	if (cur->headers_collectors)
 		free(cur->headers_collectors);
@@ -51,6 +50,7 @@ void* cli_thread(void* cl) {
 	client** hd = ((thread_data*)cl)->cl_h;
 	pthread_mutex_t* mut = ((thread_data*)cl)->mut;
 	pthread_mutex_t* mut_cac = ((thread_data*)cl)->mut_cac;
+	int send_flag = ((thread_data*)cl)->send;
 
 
 	struct timeval tv;
@@ -198,6 +198,8 @@ void* cli_thread(void* cl) {
 							}
 							printf(">>New req %s to %d\n", cli->host, cli->cli_fd);
 						}
+						if (!send_flag)
+							fix_request_line(buffer);
 						if ((r = write(cli->inet_fd, buffer, strlen(buffer))) < 0) {
 							printf("\tWriting to socket error\n");
 							cli = clear_connection(cli, hd, mut);

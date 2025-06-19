@@ -51,6 +51,7 @@ typedef struct client {
 } client;
 
 int con_to_host(int* sockfd, const char* full_host);
+void fix_request_line(char* buf);
 void con_to_cli(int* sockfd);
 void set_nonblocking(int cl_fd);
 void parse_http_request(const char* request, char* host);

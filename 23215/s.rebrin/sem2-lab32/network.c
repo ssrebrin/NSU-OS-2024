@@ -92,6 +92,40 @@ void con_to_cli(int* sockfd) {
         error("Binding error");
 }
 
+void fix_request_line(char* buf) {
+    char* line_end = strstr(buf, "\r\n");
+    if (!line_end) return;
+
+    char* http_pos = strstr(buf, "http://");
+    if (!http_pos || http_pos > line_end) return;
+
+    char* path_start = strchr(http_pos + strlen("http://"), '/');
+    if (!path_start || path_start > line_end) return;
+
+    char* version_start = strchr(path_start, ' ');
+    if (!version_start || version_start > line_end) return;
+
+    size_t method_len = 0;
+    if (strncmp(buf, "GET ", 4) == 0) method_len = 4;
+    else return;
+
+    size_t path_len = version_start - path_start;
+    size_t version_len = line_end - version_start;
+
+    char new_line[1024];
+    int written = snprintf(new_line, sizeof(new_line), "%.*s %.*s%.*s\r\n",
+        (int)method_len, buf,
+        (int)path_len, path_start,
+        (int)version_len, version_start);
+
+    if (written <= 0 || (size_t)written >= sizeof(new_line)) return;
+
+    size_t tail_len = strlen(line_end + 2);
+    memmove(buf + written, line_end + 2, tail_len + 1);
+    memcpy(buf, new_line, written);
+}
+
+
 void set_nonblocking(int cl_fd) {
     int flags = fcntl(cl_fd, F_GETFL, 0);
     if (flags == -1) {

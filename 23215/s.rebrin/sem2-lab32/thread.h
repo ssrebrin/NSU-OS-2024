@@ -25,6 +25,7 @@ typedef struct thread_data {
     pthread_mutex_t* mut;
     pthread_mutex_t* mut_cac;
     struct thread_data* next;
+    int send;
 } thread_data;
 
 void* cli_thread(void* cl);

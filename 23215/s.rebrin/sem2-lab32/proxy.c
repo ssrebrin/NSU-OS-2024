@@ -155,7 +155,15 @@ client* add(int cl_fd) {
 }
 
 
-int main() {
+int main(int argc, char* argv[]) {
+    int send_flag = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-s") == 0) {
+            send_flag = 1;
+            break;
+        }
+    }
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK);
     pthread_mutex_init(&mut, &attr);
@@ -204,6 +212,7 @@ int main() {
             dat->mut = &mut;
             dat->mut_cac = &mut_cache;
             dat->next = NULL;
+            dat->send = send_flag;
             if (!dat_cur) {
                 dat_head = dat;
                 dat_cur = dat_head;
