@@ -19,6 +19,8 @@
 extern atomic_int inter;
 extern pthread_cond_t cond_var;
 
+extern volatile int stop_server;
+
 typedef struct thread_data {
     client* cl;
     client** cl_h;

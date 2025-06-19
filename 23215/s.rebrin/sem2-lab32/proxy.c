@@ -22,8 +22,8 @@
 int los = 0;
 int sockfd;
 int server_socket;
-volatile int stop_server = 0;
 client* client_head = NULL;
+volatile int stop_server = 0;
 time_t last_log;
 int lg = 1;
 pthread_mutex_t mut;
@@ -197,13 +197,13 @@ int main(int argc, char* argv[]) {
             logs();
             los = 0;
         }
-        if (server_socket) {
+        if (server_socket && stop_server) {
             int client_socket = accept(server_socket, NULL, NULL);
             if (stop_server) {
                 close(server_socket);
                 server_socket = 0;
                 printf("Waiting for threads\n");
-                    continue;
+                continue;
             }
             if (client_socket < 0) {
                 if (errno == EINTR) {
