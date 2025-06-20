@@ -77,7 +77,7 @@ void* cli_thread(void* cl) {
 		FD_ZERO(&read_fds);
 		FD_ZERO(&write_fds);
 		 FD_SET(cli->cli_fd, &read_fds);
-		if (bytes_read) FD_SET(cli->cli_fd, &write_fds);
+		if (bytes_read || cli->using_cache) FD_SET(cli->cli_fd, &write_fds);
 		if (cli->inet_fd > 0 && !bytes_read) FD_SET(cli->inet_fd, &read_fds);
 		if (cli->cli_fd > max_fd) max_fd = cli->cli_fd;
 		if (cli->inet_fd > max_fd) max_fd = cli->inet_fd;
